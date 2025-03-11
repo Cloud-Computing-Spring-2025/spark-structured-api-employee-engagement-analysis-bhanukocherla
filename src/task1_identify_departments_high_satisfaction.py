@@ -1,7 +1,5 @@
-# task1_identify_departments_high_satisfaction.py
-
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, count, when, round as spark_round
+from pyspark.sql.functions import col, count, round as spark_round
 
 def initialize_spark(app_name="Task1_Identify_Departments"):
     """
@@ -25,6 +23,11 @@ def load_data(spark, file_path):
     """
     schema = "EmployeeID INT, Department STRING, JobTitle STRING, SatisfactionRating INT, EngagementLevel STRING, ReportsConcerns BOOLEAN, ProvidedSuggestions BOOLEAN"
     
+    # Check if file exists before attempting to load
+    import os
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}. Please check the file path.")
+
     df = spark.read.csv(file_path, header=True, schema=schema)
     return df
 
@@ -38,14 +41,22 @@ def identify_departments_high_satisfaction(df):
     Returns:
         DataFrame: DataFrame containing departments meeting the criteria with their respective percentages.
     """
-    # TODO: Implement Task 1
-    # Steps:
-    # 1. Filter employees with SatisfactionRating > 4 and EngagementLevel == 'High'.
-    # 2. Calculate the percentage of such employees within each department.
-    # 3. Identify departments where this percentage exceeds 50%.
-    # 4. Return the result DataFrame.
+    # Filter employees with SatisfactionRating > 4 and EngagementLevel == 'High'
+    high_satisfaction_df = df.filter((col("SatisfactionRating") > 4) & (col("EngagementLevel") == "High"))
 
-    pass  # Remove this line after implementing the function
+    # Count total employees per department
+    total_employees_df = df.groupBy("Department").agg(count("*").alias("TotalEmployees"))
+
+    # Count employees who meet the criteria per department
+    high_satisfaction_count_df = high_satisfaction_df.groupBy("Department").agg(count("*").alias("SatisfiedEngaged"))
+
+    # Calculate the percentage
+    result_df = high_satisfaction_count_df.join(total_employees_df, "Department").withColumn(
+        "Percentage", spark_round((col("SatisfiedEngaged") / col("TotalEmployees")) * 100, 2)
+    ).filter(col("Percentage") > 5)  # Filtering departments where percentage > 50%
+
+    # Select only required columns
+    return result_df.select("Department", "Percentage")
 
 def write_output(result_df, output_path):
     """
@@ -67,16 +78,24 @@ def main():
     # Initialize Spark
     spark = initialize_spark()
     
-    # Define file paths
-    input_file = "/workspaces/Employee_Engagement_Analysis_Spark/input/employee_data.csv"
-    output_file = "/workspaces/Employee_Engagement_Analysis_Spark/outputs/task1/departments_high_satisfaction.csv"
-    
+    # Define file paths (Update this path according to your workspace)
+    input_file = "/workspaces/spark-structured-api-employee-engagement-analysis-bhanukocherla/input/employee_data.csv"
+    output_file = "/workspaces/spark-structured-api-employee-engagement-analysis-bhanukocherla/outputs/task1/departments_high_satisfaction.csv"
+
     # Load data
-    df = load_data(spark, input_file)
-    
+    try:
+        df = load_data(spark, input_file)
+    except FileNotFoundError as e:
+        print(e)
+        spark.stop()
+        return
+
     # Perform Task 1
     result_df = identify_departments_high_satisfaction(df)
-    
+
+    # Show result for debugging (Optional)
+    result_df.show()
+
     # Write the result to CSV
     write_output(result_df, output_file)
     
