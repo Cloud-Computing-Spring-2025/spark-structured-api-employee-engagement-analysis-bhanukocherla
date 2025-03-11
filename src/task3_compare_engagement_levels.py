@@ -1,105 +1,85 @@
-# task3_compare_engagement_levels.py
-
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, avg, round as spark_round
+from pyspark.sql.functions import col, avg, when
 
 def initialize_spark(app_name="Task3_Compare_Engagement_Levels"):
-    """
-    Initialize and return a SparkSession.
-    """
+    """Initialize and return a SparkSession."""
     spark = SparkSession.builder \
         .appName(app_name) \
         .getOrCreate()
     return spark
 
 def load_data(spark, file_path):
-    """
-    Load the employee data from a CSV file into a Spark DataFrame.
-
-    Parameters:
-        spark (SparkSession): The SparkSession object.
-        file_path (str): Path to the employee_data.csv file.
-
-    Returns:
-        DataFrame: Spark DataFrame containing employee data.
-    """
+    """Load employee data from CSV into a Spark DataFrame."""
     schema = "EmployeeID INT, Department STRING, JobTitle STRING, SatisfactionRating INT, EngagementLevel STRING, ReportsConcerns BOOLEAN, ProvidedSuggestions BOOLEAN"
     
+    import os
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}. Please check the file path.")
+
     df = spark.read.csv(file_path, header=True, schema=schema)
     return df
 
-def map_engagement_level(df):
+def convert_engagement_to_numeric(df):
     """
-    Map EngagementLevel from categorical to numerical values.
-
-    Parameters:
-        df (DataFrame): Spark DataFrame containing employee data.
+    Convert categorical Engagement Levels ('Low', 'Medium', 'High') to numerical values.
 
     Returns:
-        DataFrame: DataFrame with an additional column for numerical EngagementScore.
+        DataFrame with EngagementLevel converted to numerical values.
     """
-    # TODO: Implement mapping of EngagementLevel to numerical values
-    # Example:
-    # 'Low' -> 1
-    # 'Medium' -> 2
-    # 'High' -> 3
-
-    pass  # Remove this line after implementing the function
+    df = df.withColumn("EngagementLevelNumeric", 
+        when(col("EngagementLevel") == "Low", 1)
+        .when(col("EngagementLevel") == "Medium", 2)
+        .when(col("EngagementLevel") == "High", 3)
+        .otherwise(None)  # Handle unexpected values
+    )
+    
+    return df
 
 def compare_engagement_levels(df):
     """
-    Compare engagement levels across different job titles and identify the top-performing job title.
-
-    Parameters:
-        df (DataFrame): Spark DataFrame containing employee data with numerical EngagementScore.
+    Compare Engagement Levels across Job Titles and find the top-performing Job Title.
 
     Returns:
-        DataFrame: DataFrame containing JobTitle and their average EngagementLevel.
+        DataFrame with JobTitle and its corresponding average Engagement Level.
     """
-    # TODO: Implement Task 3
-    # Steps:
-    # 1. Map EngagementLevel to numerical values.
-    # 2. Group by JobTitle and calculate average EngagementScore.
-    # 3. Round the average to two decimal places.
-    # 4. Return the result DataFrame.
+    df = convert_engagement_to_numeric(df)
 
-    pass  # Remove this line after implementing the function
+    avg_engagement_df = df.groupBy("JobTitle").agg(avg("EngagementLevelNumeric").alias("AvgEngagementLevel"))
+
+    return avg_engagement_df.orderBy(col("AvgEngagementLevel").desc())
 
 def write_output(result_df, output_path):
-    """
-    Write the result DataFrame to a CSV file.
+    """Ensure directory exists and write results to a CSV file."""
+    import os
+    output_dir = os.path.dirname(output_path)
+    
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    Parameters:
-        result_df (DataFrame): Spark DataFrame containing the result.
-        output_path (str): Path to save the output CSV file.
-
-    Returns:
-        None
-    """
-    result_df.coalesce(1).write.csv(output_path, header=True, mode='overwrite')
+    result_df.coalesce(1).write.csv(output_path, header=True, mode="overwrite")
 
 def main():
-    """
-    Main function to execute Task 3.
-    """
-    # Initialize Spark
+    """Main function to execute Task 3."""
     spark = initialize_spark()
-    
-    # Define file paths
-    input_file = "/workspaces/Employee_Engagement_Analysis_Spark/input/employee_data.csv"
-    output_file = "/workspaces/Employee_Engagement_Analysis_Spark/outputs/task3/engagement_levels_job_titles.csv"
-    
-    # Load data
-    df = load_data(spark, input_file)
-    
-    # Perform Task 3
-    df_mapped = map_engagement_level(df)
-    result_df = compare_engagement_levels(df_mapped)
-    
-    # Write the result to CSV
+
+    input_file = "/workspaces/spark-structured-api-employee-engagement-analysis-bhanukocherla/input/employee_data.csv"
+    output_file = "/workspaces/spark-structured-api-employee-engagement-analysis-bhanukocherla/outputs/task3/engagement_comparison.csv"
+
+    try:
+        df = load_data(spark, input_file)
+    except FileNotFoundError as e:
+        print(e)
+        spark.stop()
+        return
+
+    result_df = compare_engagement_levels(df)
+
+    print("Engagement Level Comparison Across Job Titles:")
+    result_df.show()
+
     write_output(result_df, output_file)
-    
-    # Stop Spark Session
+    print(f"Results saved to {output_file}")
+
     spark.stop()
 
 if __name__ == "__main__":
